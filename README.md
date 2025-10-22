@@ -16,3 +16,6 @@ Team Contributions:
   Ilan Raugust - Writing analysis code and producing visualizations, dataset research.
   
   All members: Writing documentation and project report, filming 1-2 minute video segment.
+
+Final Conclusion, Project Outcomes:
+  We hope that the outcome of our project will be sparking ideas of change in the minds of our fellow engineers. We live in a very violent city, so the topic of violence is quite prevalent, and a topic that all of us will need to be mindful of as we begin work as engineers. Though it may not be possible to solve the problem of violence in Albuquerque, it is possible for engineers to implement ideas that help prevent violence.
