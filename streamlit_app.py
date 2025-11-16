@@ -7,7 +7,7 @@ import altair as alt
 # Page configuration
 
 st.set_page_config(
-    page_title="ENG 220 Gun Violence Project",
+    page_title="ENG220 Team 4 Final Project – Violence & Security",
     page_icon="📊",
     layout="wide",
 )
@@ -24,8 +24,6 @@ def load_gun_violence_data():
     so you don't have to keep the huge CSV inside the GitHub repo.
 
     Fallback: try to read from a local file in data/gun-violence-data_01-2013_03-2018.csv
-    (this will work on your laptop, but probably not on Streamlit Cloud unless
-    you manage the big file with LFS or similar).
     """
 
     # 👉 TODO: put your real direct CSV URL here once you host it (e.g. Google Drive)
@@ -63,19 +61,10 @@ def load_gun_violence_data():
 data = load_gun_violence_data()
 
 # -----------------------------------------------------------------------------
-# Title / Intro
+# Title (short and clean, per your request)
 
-st.title("ENG 220 Gun Violence Project")
-st.markdown(
-    """
-This dashboard uses incident-level data on gun violence in the United States
-(2013–2018). Use the filters on the left to explore **where** and **when** incidents
-occur, and how many people are **killed** or **injured**.
-
-You can use the visuals here to support arguments about **patterns of gun violence**
-and the kinds of **policy responses** that might help reduce it.
-"""
-)
+st.title("ENG220 Team 4 Final Project")
+st.subheader("Violence & Security")
 
 st.divider()
 
@@ -133,7 +122,7 @@ if filtered.empty:
     st.stop()
 
 # -----------------------------------------------------------------------------
-# Summary metrics
+# Summary metrics (no extra captions)
 
 total_incidents = len(filtered)
 total_killed = int(filtered["n_killed"].sum())
@@ -150,7 +139,6 @@ with col2:
 with col3:
     st.metric("People injured (filtered)", f"{total_injured:,}")
 
-st.caption("These metrics update automatically when you change the filters.")
 st.divider()
 
 # -----------------------------------------------------------------------------
@@ -206,19 +194,10 @@ time_chart = (
 
 st.altair_chart(time_chart, use_container_width=True)
 
-st.markdown(
-    """
-**How to use this:**  
-Look for trends after particular years or events (e.g. new laws, major shootings).
-Increasing trends might suggest the need for stronger interventions, while flat or
-declining trends can show where policies may be working.
-"""
-)
-
 st.divider()
 
 # -----------------------------------------------------------------------------
-# State comparison (bar charts)
+# State comparison (bar charts) – paragraph removed
 
 st.subheader("State comparison")
 
@@ -262,34 +241,28 @@ with right:
     )
     st.altair_chart(killed_bar, use_container_width=True)
 
-st.markdown(
-    """
-This comparison helps highlight which states are contributing most to the total
-violence in your selected time range. In your paper/presentation, you might
-connect this to differences in laws, urbanization, poverty, etc.
-"""
-)
-
 st.divider()
 
 # -----------------------------------------------------------------------------
-# Map of incidents (if coordinates are available)
+# Map of incidents (sample) – FIXED SAMPLING BUG
 
 if "latitude" in filtered.columns and "longitude" in filtered.columns:
     st.subheader("Map of incidents (sample)")
 
-    # Sample up to 5000 points so the map doesn't choke on huge data
-    map_df = (
-        filtered[["latitude", "longitude"]]
-        .dropna()
-        .sample(n=min(5000, len(filtered)), random_state=0)
-    )
+    # Start from rows that actually have coordinates
+    map_source = filtered[["latitude", "longitude"]].dropna()
 
-    st.map(map_df, use_container_width=True)
+    if len(map_source) == 0:
+        st.info(
+            "There are no incidents with latitude/longitude in the current filters, "
+            "so a map cannot be drawn."
+        )
+    else:
+        # Sample up to 5000 *from the rows that have coordinates*
+        n_points = min(5000, len(map_source))
+        map_df = map_source.sample(n=n_points, random_state=0)
 
-    st.caption(
-        "This map shows a random sample of incidents (to keep the app responsive)."
-    )
+        st.map(map_df, use_container_width=True)
 else:
     st.info(
         "This dataset does not appear to include latitude/longitude columns, "
@@ -320,9 +293,4 @@ st.dataframe(
     filtered[show_cols].sort_values("date", ascending=False),
     use_container_width=True,
     height=400,
-)
-
-st.caption(
-    "You can scroll, sort, and search within this table to find specific incidents "
-    "that support your argument or case study."
 )
