@@ -330,8 +330,9 @@ st.divider()
 
 st.subheader("Incidents over time")
 
-monthly = (
-    filtered.groupby("month", as_index=False)
+# monthly by month and state, so we can stack by state
+monthly_state = (
+    filtered.groupby(["month", "state"], as_index=False)
     .agg(
         n_incidents=("incident_id", "count"),
         n_killed=("n_killed", "sum"),
@@ -366,20 +367,21 @@ metric_col = metric_col_map[metric_key]
 y_title = metric_label_map[metric_key]
 
 time_chart = (
-    alt.Chart(monthly)
+    alt.Chart(monthly_state)
     .mark_bar()
     .encode(
         x=alt.X("month:T", title="Month"),
-        y=alt.Y(f"{metric_col}:Q", title=y_title),
+        y=alt.Y(f"{metric_col}:Q", title=y_title, stack="zero"),
+        color=alt.Color("state:N", title="State"),
         tooltip=[
             "month:T",
+            "state:N",
             "n_incidents:Q",
             "n_killed:Q",
             "n_injured:Q",
         ],
     )
     .properties(height=400)
-    .interactive()
 )
 
 st.altair_chart(time_chart, width="stretch")
