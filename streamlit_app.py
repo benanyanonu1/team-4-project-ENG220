@@ -340,6 +340,9 @@ monthly_state = (
     .sort_values("month")
 )
 
+# make a categorical label so bars get a band scale (thicker bars)
+monthly_state["month_label"] = monthly_state["month"].dt.strftime("%Y-%m")
+
 metric_key = st.radio(
     "What do you want to visualize",
     options=["incidents", "killed", "injured"],
@@ -367,13 +370,17 @@ y_title = metric_label_map[metric_key]
 
 time_chart = (
     alt.Chart(monthly_state)
-    .mark_bar(size=10)  # thicker stacked bars
+    .mark_bar()
     .encode(
-        x=alt.X("month:T", title="Month"),
+        x=alt.X(
+            "month_label:N",
+            title="Month",
+            axis=alt.Axis(labelAngle=-90),
+        ),
         y=alt.Y(f"{metric_col}:Q", title=y_title, stack="zero"),
         color=alt.Color("state:N", title="State"),
         tooltip=[
-            "month:T",
+            "month_label:N",
             "state:N",
             "n_incidents:Q",
             "n_killed:Q",
