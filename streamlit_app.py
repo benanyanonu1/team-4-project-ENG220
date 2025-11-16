@@ -60,8 +60,24 @@ def build_participant_table(df: pd.DataFrame) -> pd.DataFrame:
     """
     Expand participant_* columns into one row per participant.
 
-    Columns: incident_id, state, year, age, age_group, gender, participant_type, status
+    Columns: incident_id, state, year, age, age_group, gender,
+             participant_type, status, relationship
     """
+    required_cols = [
+        "incident_id",
+        "state",
+        "year",
+        "participant_age",
+        "participant_age_group",
+        "participant_gender",
+        "participant_type",
+        "participant_status",
+        "participant_relationship",
+    ]
+    for c in required_cols:
+        if c not in df.columns:
+            return pd.DataFrame(columns=["incident_id", "state", "year"])
+
     rows = []
     cols_to_parse = [
         "participant_age",
@@ -69,6 +85,7 @@ def build_participant_table(df: pd.DataFrame) -> pd.DataFrame:
         "participant_gender",
         "participant_type",
         "participant_status",
+        "participant_relationship",
     ]
 
     for _, row in df[["incident_id", "state", "year"] + cols_to_parse].iterrows():
@@ -107,6 +124,7 @@ def build_participant_table(df: pd.DataFrame) -> pd.DataFrame:
                     "gender": fields.get("participant_gender", {}).get(idx),
                     "participant_type": fields.get("participant_type", {}).get(idx),
                     "status": fields.get("participant_status", {}).get(idx),
+                    "relationship": fields.get("participant_relationship", {}).get(idx),
                 }
             )
 
@@ -120,6 +138,10 @@ def build_gun_table(df: pd.DataFrame) -> pd.DataFrame:
 
     Columns: incident_id, state, year, gun_type, gun_stolen
     """
+    for c in ["incident_id", "state", "year", "gun_type", "gun_stolen"]:
+        if c not in df.columns:
+            return pd.DataFrame(columns=["incident_id", "state", "year", "gun_type", "gun_stolen"])
+
     rows = []
 
     for _, row in df[["incident_id", "state", "year", "gun_type", "gun_stolen"]].iterrows():
@@ -171,7 +193,7 @@ st.subheader("Violence & Security")
 st.divider()
 
 # -----------------------------------------------------------------------------
-# Sidebar filters
+# Sidebar filters (time + state)
 
 st.sidebar.header("Filters")
 
@@ -209,18 +231,104 @@ if not selected_states:
     st.warning("Select at least one state in the sidebar.")
     st.stop()
 
-# -----------------------------------------------------------------------------
-# Filtered dataset
-
-filtered = data[
+# Base incident filter by year + state
+base_incidents = data[
     (data["year"] >= from_year)
     & (data["year"] <= to_year)
     & (data["state"].isin(selected_states))
 ]
 
-if filtered.empty:
-    st.warning("No incidents match your current filters.")
+if base_incidents.empty:
+    st.warning("No incidents match the current year/state filters.")
     st.stop()
+
+base_incident_ids = set(base_incidents["incident_id"].unique())
+
+# -----------------------------------------------------------------------------
+# Sidebar filters (participant + gun)
+
+st.sidebar.markdown("---")
+st.sidebar.subheader("Participant filters (optional)")
+
+# participant data limited to filtered incidents
+p_base = participants_all[participants_all["incident_id"].isin(base_incident_ids)]
+
+role_options = sorted(p_base["participant_type"].dropna().unique()) if not p_base.empty else []
+gender_options = sorted(p_base["gender"].dropna().unique()) if not p_base.empty else []
+rel_options = sorted(p_base["relationship"].dropna().unique()) if not p_base.empty else []
+
+selected_roles = st.sidebar.multiselect(
+    "Participant role (e.g. Victim, Subject-Suspect)",
+    options=role_options,
+)
+
+selected_genders = st.sidebar.multiselect(
+    "Participant gender",
+    options=gender_options,
+)
+
+selected_relationships = st.sidebar.multiselect(
+    "Relationship (e.g. Family, Partner)",
+    options=rel_options,
+)
+
+st.sidebar.markdown("---")
+st.sidebar.subheader("Gun filters (optional)")
+
+g_base = guns_all[guns_all["incident_id"].isin(base_incident_ids)]
+
+gun_type_options = sorted(g_base["gun_type"].dropna().unique()) if not g_base.empty else []
+stolen_options = sorted(g_base["gun_stolen"].dropna().unique()) if not g_base.empty else []
+
+selected_gun_types = st.sidebar.multiselect(
+    "Gun type (e.g. Handgun, Rifle)",
+    options=gun_type_options,
+)
+
+selected_stolen = st.sidebar.multiselect(
+    "Gun stolen status",
+    options=stolen_options,
+)
+
+# -----------------------------------------------------------------------------
+# Apply advanced filters to incidents
+
+incident_ids = set(base_incident_ids)
+
+# Participant-based incident filter
+if p_base is not None and not p_base.empty:
+    pf = p_base.copy()
+    if selected_roles:
+        pf = pf[pf["participant_type"].isin(selected_roles)]
+    if selected_genders:
+        pf = pf[pf["gender"].isin(selected_genders)]
+    if selected_relationships:
+        pf = pf[pf["relationship"].isin(selected_relationships)]
+
+    if selected_roles or selected_genders or selected_relationships:
+        incident_ids &= set(pf["incident_id"].unique())
+
+# Gun-based incident filter
+if g_base is not None and not g_base.empty:
+    gf = g_base.copy()
+    if selected_gun_types:
+        gf = gf[gf["gun_type"].isin(selected_gun_types)]
+    if selected_stolen:
+        gf = gf[gf["gun_stolen"].isin(selected_stolen)]
+
+    if selected_gun_types or selected_stolen:
+        incident_ids &= set(gf["incident_id"].unique())
+
+# Final incident filter
+filtered = base_incidents[base_incidents["incident_id"].isin(incident_ids)]
+
+if filtered.empty:
+    st.warning("No incidents match all the selected filters.")
+    st.stop()
+
+# Also filter participant / gun tables for later charts
+p_filtered = p_base[p_base["incident_id"].isin(incident_ids)]
+guns_filtered = g_base[g_base["incident_id"].isin(incident_ids)]
 
 # -----------------------------------------------------------------------------
 # Summary metrics
@@ -345,22 +453,15 @@ with right:
 st.divider()
 
 # -----------------------------------------------------------------------------
-# Participant demographics (age, gender, role)
+# Participant demographics (age, gender, role, relationship)
 
 st.subheader("Participant demographics")
-
-p_filtered = participants_all[
-    (participants_all["year"] >= from_year)
-    & (participants_all["year"] <= to_year)
-    & (participants_all["state"].isin(selected_states))
-]
 
 if p_filtered.empty:
     st.info("No participant-level data available for the current filters.")
 else:
     # Age distribution for victims vs suspects
     p_age = p_filtered.dropna(subset=["age"]).copy()
-    # Keep only reasonable ages to avoid weird data
     p_age = p_age[(p_age["age"] >= 0) & (p_age["age"] <= 100)]
 
     col_age, col_gender = st.columns(2)
@@ -376,10 +477,7 @@ else:
                 .encode(
                     x=alt.X("age:Q", bin=alt.Bin(maxbins=30), title="Age"),
                     y=alt.Y("count():Q", title="Number of participants"),
-                    color=alt.Color(
-                        "participant_type:N",
-                        title="Type",
-                    ),
+                    color=alt.Color("participant_type:N", title="Type"),
                     tooltip=[
                         "participant_type:N",
                         "count()",
@@ -415,28 +513,45 @@ else:
             )
             st.altair_chart(gender_chart, use_container_width=True)
 
+    # Relationship chart
+    rel = p_filtered.dropna(subset=["relationship"])
+    if not rel.empty:
+        st.markdown("**Relationship to other participants (e.g. family, partner)**")
+        rel_counts = (
+            rel.groupby("relationship", as_index=False)
+            .size()
+            .rename(columns={"size": "count"})
+            .sort_values("count", ascending=False)
+            .head(15)
+        )
+        rel_chart = (
+            alt.Chart(rel_counts)
+            .mark_bar()
+            .encode(
+                x=alt.X("count:Q", title="Number of participants"),
+                y=alt.Y("relationship:N", sort="-x", title="Relationship"),
+                tooltip=["relationship", "count"],
+            )
+            .properties(height=300)
+        )
+        st.altair_chart(rel_chart, use_container_width=True)
+
 st.divider()
 
 # -----------------------------------------------------------------------------
-# Gun characteristics (type + stolen)
+# Gun characteristics (type + stolen + means/medians)
 
 st.subheader("Gun characteristics")
-
-guns_filtered = guns_all[
-    (guns_all["year"] >= from_year)
-    & (guns_all["year"] <= to_year)
-    & (guns_all["state"].isin(selected_states))
-]
 
 if guns_filtered.empty:
     st.info("No gun-level data available for the current filters.")
 else:
-    guns_filtered = guns_filtered.copy()
-    guns_filtered["gun_type"] = guns_filtered["gun_type"].fillna("Unknown")
-    guns_filtered["gun_stolen"] = guns_filtered["gun_stolen"].fillna("Unknown")
+    guns_clean = guns_filtered.copy()
+    guns_clean["gun_type"] = guns_clean["gun_type"].fillna("Unknown")
+    guns_clean["gun_stolen"] = guns_clean["gun_stolen"].fillna("Unknown")
 
     gun_counts = (
-        guns_filtered.groupby("gun_type", as_index=False)
+        guns_clean.groupby("gun_type", as_index=False)
         .size()
         .rename(columns={"size": "count"})
         .sort_values("count", ascending=False)
@@ -444,7 +559,7 @@ else:
     )
 
     stolen_counts = (
-        guns_filtered.groupby("gun_stolen", as_index=False)
+        guns_clean.groupby("gun_stolen", as_index=False)
         .size()
         .rename(columns={"size": "count"})
         .sort_values("count", ascending=False)
@@ -480,16 +595,54 @@ else:
         )
         st.altair_chart(stolen_chart, use_container_width=True)
 
+    # Mean / median killed per incident by gun type
+    st.markdown("**Outcomes by gun type (mean & median deaths per incident)**")
+
+    inc_level = filtered[["incident_id", "n_killed", "n_injured"]].drop_duplicates()
+    inc_gun = guns_clean[["incident_id", "gun_type"]].dropna().drop_duplicates()
+    merged = inc_gun.merge(inc_level, on="incident_id", how="left")
+
+    gun_stats = (
+        merged.groupby("gun_type", as_index=False)
+        .agg(
+            incidents=("incident_id", "nunique"),
+            mean_killed=("n_killed", "mean"),
+            median_killed=("n_killed", "median"),
+            mean_total_victims=("n_killed", "mean"),  # you can change this if you add injured
+        )
+        .sort_values("mean_killed", ascending=False)
+    )
+
+    # Round for display
+    gun_stats["mean_killed"] = gun_stats["mean_killed"].round(2)
+    gun_stats["median_killed"] = gun_stats["median_killed"].round(2)
+
+    st.dataframe(
+        gun_stats.head(15),
+        use_container_width=True,
+        height=350,
+    )
+
 st.divider()
 
 # -----------------------------------------------------------------------------
-# Map of incidents (sample)
+# Map of incidents (hoverable)
+
+st.subheader("Map of incidents (hover for details)")
 
 if "latitude" in filtered.columns and "longitude" in filtered.columns:
-    st.subheader("Map of incidents (sample)")
-
-    # Only consider rows with coordinates
-    map_source = filtered[["latitude", "longitude"]].dropna()
+    map_source = filtered[
+        [
+            "latitude",
+            "longitude",
+            "date",
+            "state",
+            "city_or_county",
+            "n_killed",
+            "n_injured",
+            "incident_characteristics",
+        ]
+    ].dropna(subset=["latitude", "longitude"])
 
     if len(map_source) == 0:
         st.info(
@@ -497,9 +650,29 @@ if "latitude" in filtered.columns and "longitude" in filtered.columns:
             "so a map cannot be drawn."
         )
     else:
-        n_points = min(5000, len(map_source))
-        map_df = map_source.sample(n=n_points, random_state=0)
-        st.map(map_df, use_container_width=True)
+        # Sample if huge
+        if len(map_source) > 5000:
+            map_source = map_source.sample(n=5000, random_state=0)
+
+        map_chart = (
+            alt.Chart(map_source)
+            .mark_circle(opacity=0.6)
+            .encode(
+                longitude="longitude:Q",
+                latitude="latitude:Q",
+                size=alt.Size("n_killed:Q", title="People killed", scale=alt.Scale(range=[10, 200])),
+                tooltip=[
+                    "date:T",
+                    "state:N",
+                    "city_or_county:N",
+                    "n_killed:Q",
+                    "n_injured:Q",
+                    "incident_characteristics:N",
+                ],
+            )
+            .properties(height=450)
+        )
+        st.altair_chart(map_chart, use_container_width=True)
 else:
     st.info(
         "This dataset does not appear to include latitude/longitude columns, "
