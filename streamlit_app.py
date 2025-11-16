@@ -330,7 +330,6 @@ st.divider()
 
 st.subheader("Incidents over time")
 
-# monthly by month and state, so we can stack by state
 monthly_state = (
     filtered.groupby(["month", "state"], as_index=False)
     .agg(
@@ -368,7 +367,7 @@ y_title = metric_label_map[metric_key]
 
 time_chart = (
     alt.Chart(monthly_state)
-    .mark_bar()
+    .mark_bar(size=10)  # thicker stacked bars
     .encode(
         x=alt.X("month:T", title="Month"),
         y=alt.Y(f"{metric_col}:Q", title=y_title, stack="zero"),
