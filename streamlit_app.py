@@ -205,7 +205,9 @@ guns_all = build_gun_table(data)
 
 
 st.title("ENG220 Team 4 Final Project")
-st.subheader("Violence and Security — Ben Anyanonu, Max Aragon, Sebastian Gardiner, Avery Portillos, Ilan Raugust")
+st.subheader(
+    "Violence and Security — Ben Anyanonu, Max Aragon, Sebastian Gardiner, Avery Portillos, Ilan Raugust"
+)
 
 st.divider()
 
@@ -329,43 +331,39 @@ st.divider()
 st.subheader("Incidents over time")
 
 monthly = (
-    filtered.groupby(["month", "state"], as_index=False)
+    filtered.groupby("month", as_index=False)
     .agg(
-        incidents=("date", "count"),
+        n_incidents=("incident_id", "count"),
         n_killed=("n_killed", "sum"),
         n_injured=("n_injured", "sum"),
     )
     .sort_values("month")
 )
 
-time_metric = st.radio(
+metric_label = st.radio(
     "What do you want to visualize",
-    options=["incidents", "n_killed", "n_injured"],
-    format_func=lambda x: {
-        "incidents": "Number of incidents",
-        "n_killed": "Number killed",
-        "n_injured": "Number injured",
-    }[x],
+    options=["Number of incidents", "Number killed", "Number injured"],
     horizontal=True,
 )
 
-y_title = {
-    "incidents": "Number of incidents",
-    "n_killed": "People killed",
-    "n_injured": "People injured",
-}[time_metric]
+metric_map = {
+    "Number of incidents": "n_incidents",
+    "Number killed": "n_killed",
+    "Number injured": "n_injured",
+}
+metric_col = metric_map[metric_label]
+
+y_title = metric_label
 
 time_chart = (
     alt.Chart(monthly)
-    .mark_line(point=True)
+    .mark_bar()
     .encode(
         x=alt.X("month:T", title="Month"),
-        y=alt.Y(f"{time_metric}:Q", title=y_title),
-        color=alt.Color("state:N", title="State"),
+        y=alt.Y(f"{metric_col}:Q", title=y_title),
         tooltip=[
             "month:T",
-            "state:N",
-            "incidents:Q",
+            "n_incidents:Q",
             "n_killed:Q",
             "n_injured:Q",
         ],
@@ -591,18 +589,23 @@ st.divider()
 st.subheader("Map of incidents")
 
 if "latitude" in filtered.columns and "longitude" in filtered.columns:
-    map_source = filtered[
-        [
-            "latitude",
-            "longitude",
-            "date",
-            "state",
-            "city_or_county",
-            "n_killed",
-            "n_injured",
-            "incident_characteristics",
-        ]
-    ].dropna(subset=["latitude", "longitude"])
+    base_cols = [
+        "latitude",
+        "longitude",
+        "date",
+        "state",
+        "city_or_county",
+        "n_killed",
+        "n_injured",
+        "incident_characteristics",
+    ]
+
+    extra_url_cols = ["incident_url", "source_url", "source_url_2", "source_url_3"]
+    for c in extra_url_cols:
+        if c in filtered.columns:
+            base_cols.append(c)
+
+    map_source = filtered[base_cols].dropna(subset=["latitude", "longitude"])
 
     if len(map_source) == 0:
         st.info(
@@ -636,10 +639,21 @@ if "latitude" in filtered.columns and "longitude" in filtered.columns:
             auto_highlight=True,
         )
 
-        tooltip = {
-            "text": "{date_str} | {city_or_county}, {state}\n"
-                    "Killed: {n_killed}, Injured: {n_injured}",
-        }
+        tooltip_lines = [
+            "{date_str} | {city_or_county}, {state}",
+            "Killed: {n_killed}, Injured: {n_injured}",
+            "Characteristics: {incident_characteristics}",
+        ]
+        if "incident_url" in map_source.columns:
+            tooltip_lines.append("Incident URL: {incident_url}")
+        if "source_url" in map_source.columns:
+            tooltip_lines.append("Source URL: {source_url}")
+        if "source_url_2" in map_source.columns:
+            tooltip_lines.append("Source URL 2: {source_url_2}")
+        if "source_url_3" in map_source.columns:
+            tooltip_lines.append("Source URL 3: {source_url_3}")
+
+        tooltip = {"text": "\n".join(tooltip_lines)}
 
         deck = pdk.Deck(
             layers=[layer],
