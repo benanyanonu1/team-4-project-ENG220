@@ -205,7 +205,7 @@ guns_all = build_gun_table(data)
 
 
 st.title("ENG220 Team 4 Final Project")
-st.subheader("Violence and Security")
+st.subheader("Violence and Security — Ben Anyanonu, Max Aragon, Sebastian Gardiner, Avery Portillos, Ilan Raugust")
 
 st.divider()
 
