@@ -31,7 +31,7 @@ def load_gun_violence_data():
         df = pd.read_csv(local_path, parse_dates=["date"])
 
     df["year"] = df["date"].dt.year
-    df["month"] = df["date"].to_period("M").dt.to_timestamp()
+    df["month"] = df["date"].dt.to_period("M").dt.to_timestamp()
 
     for col in ["n_killed", "n_injured"]:
         if col in df.columns:
