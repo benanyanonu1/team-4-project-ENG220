@@ -4,51 +4,35 @@ from pathlib import Path
 import altair as alt
 import pydeck as pdk
 
-# -----------------------------------------------------------------------------
-# Page configuration
 
 st.set_page_config(
-    page_title="ENG220 Team 4 Final Project – Violence & Security",
-    page_icon="📊",
+    page_title="ENG220 Team 4 Final Project Violence and Security",
+    page_icon="ENG220",
     layout="wide",
 )
 
-# -----------------------------------------------------------------------------
-# Data loading
 
 @st.cache_data
 def load_gun_violence_data():
-    """
-    Load gun violence data.
+    """Load gun violence data from url if provided, otherwise from local data folder."""
 
-    Preferred: load from an online URL (e.g. Google Drive direct-download link).
-    Fallback: local CSV in data/gun-violence-data_01-2013_03-2018.csv
-    """
-
-    # 👉 OPTIONAL: put your real direct CSV URL here once you host it (e.g. Google Drive)
-    DATA_URL = ""  # e.g. "https://drive.google.com/uc?export=download&id=YOUR_FILE_ID"
+    data_url = ""  # optional url if you host the csv somewhere
 
     df = None
 
-    # Try URL first if you’ve set one
-    if DATA_URL:
+    if data_url:
         try:
-            df = pd.read_csv(DATA_URL, parse_dates=["date"])
-        except Exception as e:
-            st.warning(
-                f"Tried to load data from URL but failed: {e}. Falling back to local file."
-            )
+            df = pd.read_csv(data_url, parse_dates=["date"])
+        except Exception:
+            st.warning("Could not load data from url, using local file instead")
 
     if df is None:
-        # Local fallback
         local_path = Path(__file__).parent / "data" / "gun-violence-data_01-2013_03-2018.csv"
         df = pd.read_csv(local_path, parse_dates=["date"])
 
-    # Basic time features
     df["year"] = df["date"].dt.year
     df["month"] = df["date"].dt.to_period("M").dt.to_timestamp()
 
-    # Make sure numeric columns are numeric
     for col in ["n_killed", "n_injured"]:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
@@ -60,12 +44,8 @@ def load_gun_violence_data():
 
 @st.cache_data
 def build_participant_table(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Expand participant_* columns into one row per participant.
+    """Turn participant columns into one row per participant."""
 
-    Columns: incident_id, state, year, age, age_group, gender,
-             participant_type, status, relationship
-    """
     required_cols = [
         "incident_id",
         "state",
@@ -133,20 +113,22 @@ def build_participant_table(df: pd.DataFrame) -> pd.DataFrame:
 
     p = pd.DataFrame(rows)
 
-    # Rename "Subject-Suspect" → "Suspect" so the UI looks cleaner
     if not p.empty and "participant_type" in p.columns:
         p["participant_type"] = p["participant_type"].replace({"Subject-Suspect": "Suspect"})
+
+    if "gender" in p.columns:
+        p["gender"] = p["gender"].astype("string").str.strip()
+        p["gender"] = p["gender"].str.title()
+        multi_mask = p["gender"].str.contains(",", na=False)
+        p.loc[multi_mask, "gender"] = None
 
     return p
 
 
 @st.cache_data
 def build_gun_table(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Expand gun_* columns into one row per gun.
+    """Turn gun columns into one row per gun."""
 
-    Columns: incident_id, state, year, gun_type, gun_stolen
-    """
     for c in ["incident_id", "state", "year", "gun_type", "gun_stolen"]:
         if c not in df.columns:
             return pd.DataFrame(columns=["incident_id", "state", "year", "gun_type", "gun_stolen"])
@@ -188,14 +170,9 @@ def build_gun_table(df: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-# Helper for "All" behaviour on multiselects
 def sidebar_multiselect_with_all(label: str, options, key_prefix: str):
-    """
-    Sidebar widget: checkbox "All <label>" + multiselect.
-    - If "All" is checked, all options are used and multiselect is disabled.
-    - If unchecked, user can pick a subset (or none).
-    Returns the list of selected options (or [] if none).
-    """
+    """Sidebar helper that gives an all toggle above a multiselect."""
+
     if not options:
         return []
 
@@ -206,7 +183,6 @@ def sidebar_multiselect_with_all(label: str, options, key_prefix: str):
     all_selected = st.sidebar.checkbox(f"All {label.lower()}", value=True, key=all_key)
 
     if all_selected:
-        # Show disabled multiselect just so they can see what's included
         st.sidebar.multiselect(
             "",
             options,
@@ -223,21 +199,16 @@ def sidebar_multiselect_with_all(label: str, options, key_prefix: str):
         )
 
 
-# Load base data
 data = load_gun_violence_data()
 participants_all = build_participant_table(data)
 guns_all = build_gun_table(data)
 
-# -----------------------------------------------------------------------------
-# Title
 
 st.title("ENG220 Team 4 Final Project")
-st.subheader("Violence & Security")
+st.subheader("Violence and Security")
 
 st.divider()
 
-# -----------------------------------------------------------------------------
-# Sidebar filters (time + state)
 
 st.sidebar.header("Filters")
 
@@ -255,23 +226,12 @@ from_year, to_year = year_range
 
 states = sorted(data["state"].dropna().unique())
 
-default_states = [
-    "Illinois",
-    "California",
-    "Florida",
-    "Texas",
-    "Ohio",
-    "New York",
-]
-default_states = [s for s in default_states if s in states] or states[:6]
-
 selected_states = sidebar_multiselect_with_all("States to include", states, "states")
 
 if not selected_states:
     st.warning("Select at least one state in the sidebar.")
     st.stop()
 
-# Base incident filter by year + state
 base_incidents = data[
     (data["year"] >= from_year)
     & (data["year"] <= to_year)
@@ -279,16 +239,14 @@ base_incidents = data[
 ]
 
 if base_incidents.empty:
-    st.warning("No incidents match the current year/state filters.")
+    st.warning("No incidents match the current year and state filters.")
     st.stop()
 
 base_incident_ids = set(base_incidents["incident_id"].unique())
 
-# -----------------------------------------------------------------------------
-# Sidebar filters (participant + gun)
 
 st.sidebar.markdown("---")
-st.sidebar.subheader("Participant filters (optional)")
+st.sidebar.subheader("Participant filters")
 
 p_base = participants_all[participants_all["incident_id"].isin(base_incident_ids)]
 
@@ -299,11 +257,11 @@ rel_options = sorted(p_base["relationship"].dropna().unique()) if not p_base.emp
 selected_roles = sidebar_multiselect_with_all("Participant role", role_options, "roles")
 selected_genders = sidebar_multiselect_with_all("Participant gender", gender_options, "gender")
 selected_relationships = sidebar_multiselect_with_all(
-    "Relationship (e.g. Family, Partner)", rel_options, "rel"
+    "Relationship for example family or partner", rel_options, "rel"
 )
 
 st.sidebar.markdown("---")
-st.sidebar.subheader("Gun filters (optional)")
+st.sidebar.subheader("Gun filters")
 
 g_base = guns_all[guns_all["incident_id"].isin(base_incident_ids)]
 
@@ -311,16 +269,13 @@ gun_type_options = sorted(g_base["gun_type"].dropna().unique()) if not g_base.em
 stolen_options = sorted(g_base["gun_stolen"].dropna().unique()) if not g_base.empty else []
 
 selected_gun_types = sidebar_multiselect_with_all(
-    "Gun type (e.g. Handgun, Rifle)", gun_type_options, "guntype"
+    "Gun type for example handgun or rifle", gun_type_options, "guntype"
 )
 selected_stolen = sidebar_multiselect_with_all("Gun stolen status", stolen_options, "stolen")
 
-# -----------------------------------------------------------------------------
-# Apply advanced filters to incidents
 
 incident_ids = set(base_incident_ids)
 
-# Participant-based incident filter
 if p_base is not None and not p_base.empty:
     pf = p_base.copy()
     if selected_roles and len(selected_roles) != len(role_options):
@@ -330,11 +285,9 @@ if p_base is not None and not p_base.empty:
     if selected_relationships and len(selected_relationships) != len(rel_options):
         pf = pf[pf["relationship"].isin(selected_relationships)]
 
-    # Only apply if filters actually restricted something
     if len(pf) < len(p_base):
         incident_ids &= set(pf["incident_id"].unique())
 
-# Gun-based incident filter
 if g_base is not None and not g_base.empty:
     gf = g_base.copy()
     if selected_gun_types and len(selected_gun_types) != len(gun_type_options):
@@ -345,19 +298,15 @@ if g_base is not None and not g_base.empty:
     if len(gf) < len(g_base):
         incident_ids &= set(gf["incident_id"].unique())
 
-# Final incident filter
 filtered = base_incidents[base_incidents["incident_id"].isin(incident_ids)]
 
 if filtered.empty:
-    st.warning("No incidents match all the selected filters.")
+    st.warning("No incidents match all selected filters.")
     st.stop()
 
-# Also filter participant / gun tables for later charts
 p_filtered = p_base[p_base["incident_id"].isin(incident_ids)]
 guns_filtered = g_base[g_base["incident_id"].isin(incident_ids)]
 
-# -----------------------------------------------------------------------------
-# Summary metrics
 
 total_incidents = len(filtered)
 total_killed = int(filtered["n_killed"].sum())
@@ -366,18 +315,16 @@ total_injured = int(filtered["n_injured"].sum())
 col1, col2, col3 = st.columns(3)
 
 with col1:
-    st.metric("Incidents (filtered)", f"{total_incidents:,}")
+    st.metric("Incidents in view", f"{total_incidents:,}")
 
 with col2:
-    st.metric("People killed (filtered)", f"{total_killed:,}")
+    st.metric("People killed in view", f"{total_killed:,}")
 
 with col3:
-    st.metric("People injured (filtered)", f"{total_injured:,}")
+    st.metric("People injured in view", f"{total_injured:,}")
 
 st.divider()
 
-# -----------------------------------------------------------------------------
-# Incidents over time (monthly)
 
 st.subheader("Incidents over time")
 
@@ -392,7 +339,7 @@ monthly = (
 )
 
 time_metric = st.radio(
-    "What do you want to visualize?",
+    "What do you want to visualize",
     options=["incidents", "n_killed", "n_injured"],
     format_func=lambda x: {
         "incidents": "Number of incidents",
@@ -431,8 +378,6 @@ st.altair_chart(time_chart, width="stretch")
 
 st.divider()
 
-# -----------------------------------------------------------------------------
-# State comparison (bar charts)
 
 st.subheader("State comparison")
 
@@ -478,13 +423,11 @@ with right:
 
 st.divider()
 
-# -----------------------------------------------------------------------------
-# Participant demographics (age, gender, role, relationship)
 
 st.subheader("Participant demographics")
 
 if p_filtered.empty:
-    st.info("No participant-level data available for the current filters.")
+    st.info("No participant level data available for the current filters.")
 else:
     p_age = p_filtered.dropna(subset=["age"]).copy()
     p_age = p_age[(p_age["age"] >= 0) & (p_age["age"] <= 100)]
@@ -492,7 +435,7 @@ else:
     col_age, col_gender = st.columns(2)
 
     with col_age:
-        st.markdown("**Age distribution (victims vs suspects)**")
+        st.markdown("**Age distribution for victims and suspects**")
         if p_age.empty:
             st.info("No usable age data for the current filters.")
         else:
@@ -540,7 +483,7 @@ else:
 
     rel = p_filtered.dropna(subset=["relationship"])
     if not rel.empty:
-        st.markdown("**Relationship to other participants (e.g. family, partner)**")
+        st.markdown("**Relationship examples such as family or partner**")
         rel_counts = (
             rel.groupby("relationship", as_index=False)
             .size()
@@ -562,13 +505,11 @@ else:
 
 st.divider()
 
-# -----------------------------------------------------------------------------
-# Gun characteristics (type + stolen + means/medians)
 
 st.subheader("Gun characteristics")
 
 if guns_filtered.empty:
-    st.info("No gun-level data available for the current filters.")
+    st.info("No gun level data available for the current filters.")
 else:
     guns_clean = guns_filtered.copy()
     guns_clean["gun_type"] = guns_clean["gun_type"].fillna("Unknown")
@@ -606,7 +547,7 @@ else:
         st.altair_chart(gun_type_chart, width="stretch")
 
     with col_stolen:
-        st.markdown("**Guns stolen or not**")
+        st.markdown("**Guns stolen or not stolen**")
         stolen_chart = (
             alt.Chart(stolen_counts)
             .mark_bar()
@@ -619,7 +560,7 @@ else:
         )
         st.altair_chart(stolen_chart, width="stretch")
 
-    st.markdown("**Outcomes by gun type (mean & median deaths per incident)**")
+    st.markdown("**Outcomes by gun type mean and median deaths per incident**")
 
     inc_level = filtered[["incident_id", "n_killed", "n_injured"]].drop_duplicates()
     inc_gun = guns_clean[["incident_id", "gun_type"]].dropna().drop_duplicates()
@@ -646,10 +587,8 @@ else:
 
 st.divider()
 
-# -----------------------------------------------------------------------------
-# Map of incidents (hoverable, zoomable overlay via pydeck)
 
-st.subheader("Map of incidents (hover for details)")
+st.subheader("Map of incidents")
 
 if "latitude" in filtered.columns and "longitude" in filtered.columns:
     map_source = filtered[
@@ -667,18 +606,15 @@ if "latitude" in filtered.columns and "longitude" in filtered.columns:
 
     if len(map_source) == 0:
         st.info(
-            "There are no incidents with latitude/longitude in the current filters, "
-            "so a map cannot be drawn."
+            "There are no incidents with latitude and longitude in the current filters."
         )
     else:
         if len(map_source) > 5000:
             map_source = map_source.sample(n=5000, random_state=0)
 
-        # Convert date to string so tooltip doesn't show [object Object]
         map_source = map_source.copy()
         map_source["date_str"] = pd.to_datetime(map_source["date"]).dt.strftime("%Y-%m-%d")
 
-        # Center the view on the data
         view_state = pdk.ViewState(
             latitude=float(map_source["latitude"].mean()),
             longitude=float(map_source["longitude"].mean()),
@@ -686,14 +622,13 @@ if "latitude" in filtered.columns and "longitude" in filtered.columns:
             pitch=0,
         )
 
-        # Scale dot size by severity (killed + injured), but keep radius in pixels
         map_source["severity"] = map_source["n_killed"] + map_source["n_injured"] + 1
 
         layer = pdk.Layer(
             "ScatterplotLayer",
             data=map_source,
             get_position='[longitude, latitude]',
-            get_radius="severity * 500",   # meters, capped by pixel limits
+            get_radius="severity * 500",
             radius_min_pixels=2,
             radius_max_pixels=15,
             get_fill_color=[0, 153, 255, 160],
@@ -715,16 +650,13 @@ if "latitude" in filtered.columns and "longitude" in filtered.columns:
         st.pydeck_chart(deck, width="stretch")
 else:
     st.info(
-        "This dataset does not appear to include latitude/longitude columns, "
-        "so a map view is not available."
+        "This data set does not include latitude and longitude so a map is not available."
     )
 
 st.divider()
 
-# -----------------------------------------------------------------------------
-# Raw data table
 
-st.subheader("Raw data (filtered)")
+st.subheader("Raw data for current filters")
 
 show_cols = [
     col
