@@ -689,7 +689,6 @@ if "latitude" in filtered.columns and "longitude" in filtered.columns:
             layers=[layer],
             initial_view_state=view_state,
             tooltip=tooltip,
-            # default basemap (zoomable, pannable)
         )
 
         st.pydeck_chart(deck, use_container_width=True)
