@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 from pathlib import Path
 import altair as alt
+import pydeck as pdk
 
 # -----------------------------------------------------------------------------
 # Page configuration
@@ -128,7 +129,13 @@ def build_participant_table(df: pd.DataFrame) -> pd.DataFrame:
                 }
             )
 
-    return pd.DataFrame(rows)
+    p = pd.DataFrame(rows)
+
+    # 🔁 Rename "Subject-Suspect" → "Suspect" everywhere
+    if not p.empty and "participant_type" in p.columns:
+        p["participant_type"] = p["participant_type"].replace({"Subject-Suspect": "Suspect"})
+
+    return p
 
 
 @st.cache_data
@@ -250,15 +257,15 @@ base_incident_ids = set(base_incidents["incident_id"].unique())
 st.sidebar.markdown("---")
 st.sidebar.subheader("Participant filters (optional)")
 
-# participant data limited to filtered incidents
 p_base = participants_all[participants_all["incident_id"].isin(base_incident_ids)]
 
 role_options = sorted(p_base["participant_type"].dropna().unique()) if not p_base.empty else []
 gender_options = sorted(p_base["gender"].dropna().unique()) if not p_base.empty else []
 rel_options = sorted(p_base["relationship"].dropna().unique()) if not p_base.empty else []
 
+# 🔹 label text simplified, no "(e.g. Victim, Subject-Suspect)"
 selected_roles = st.sidebar.multiselect(
-    "Participant role (e.g. Victim, Subject-Suspect)",
+    "Participant role",
     options=role_options,
 )
 
@@ -460,7 +467,6 @@ st.subheader("Participant demographics")
 if p_filtered.empty:
     st.info("No participant-level data available for the current filters.")
 else:
-    # Age distribution for victims vs suspects
     p_age = p_filtered.dropna(subset=["age"]).copy()
     p_age = p_age[(p_age["age"] >= 0) & (p_age["age"] <= 100)]
 
@@ -513,7 +519,6 @@ else:
             )
             st.altair_chart(gender_chart, use_container_width=True)
 
-    # Relationship chart
     rel = p_filtered.dropna(subset=["relationship"])
     if not rel.empty:
         st.markdown("**Relationship to other participants (e.g. family, partner)**")
@@ -595,7 +600,6 @@ else:
         )
         st.altair_chart(stolen_chart, use_container_width=True)
 
-    # Mean / median killed per incident by gun type
     st.markdown("**Outcomes by gun type (mean & median deaths per incident)**")
 
     inc_level = filtered[["incident_id", "n_killed", "n_injured"]].drop_duplicates()
@@ -608,12 +612,10 @@ else:
             incidents=("incident_id", "nunique"),
             mean_killed=("n_killed", "mean"),
             median_killed=("n_killed", "median"),
-            mean_total_victims=("n_killed", "mean"),  # you can change this if you add injured
         )
         .sort_values("mean_killed", ascending=False)
     )
 
-    # Round for display
     gun_stats["mean_killed"] = gun_stats["mean_killed"].round(2)
     gun_stats["median_killed"] = gun_stats["median_killed"].round(2)
 
@@ -626,7 +628,7 @@ else:
 st.divider()
 
 # -----------------------------------------------------------------------------
-# Map of incidents (hoverable)
+# Map of incidents (hoverable, zoomable overlay via pydeck)
 
 st.subheader("Map of incidents (hover for details)")
 
@@ -650,29 +652,42 @@ if "latitude" in filtered.columns and "longitude" in filtered.columns:
             "so a map cannot be drawn."
         )
     else:
-        # Sample if huge
         if len(map_source) > 5000:
             map_source = map_source.sample(n=5000, random_state=0)
 
-        map_chart = (
-            alt.Chart(map_source)
-            .mark_circle(opacity=0.6)
-            .encode(
-                longitude="longitude:Q",
-                latitude="latitude:Q",
-                size=alt.Size("n_killed:Q", title="People killed", scale=alt.Scale(range=[10, 200])),
-                tooltip=[
-                    "date:T",
-                    "state:N",
-                    "city_or_county:N",
-                    "n_killed:Q",
-                    "n_injured:Q",
-                    "incident_characteristics:N",
-                ],
-            )
-            .properties(height=450)
+        # Center the view on the data
+        view_state = pdk.ViewState(
+            latitude=float(map_source["latitude"].mean()),
+            longitude=float(map_source["longitude"].mean()),
+            zoom=3,
+            pitch=0,
         )
-        st.altair_chart(map_chart, use_container_width=True)
+
+        layer = pdk.Layer(
+            "ScatterplotLayer",
+            data=map_source,
+            get_position='[longitude, latitude]',
+            get_radius=20000,
+            get_fill_color=[0, 153, 255, 160],
+            pickable=True,
+            auto_highlight=True,
+        )
+
+        tooltip = {
+            "html": "<b>{date}</b><br/>{city_or_county}, {state}<br/>"
+                    "Killed: {n_killed}, Injured: {n_injured}<br/>"
+                    "<span style='font-size: 10px'>{incident_characteristics}</span>",
+            "style": {"backgroundColor": "black", "color": "white"},
+        }
+
+        deck = pdk.Deck(
+            layers=[layer],
+            initial_view_state=view_state,
+            tooltip=tooltip,
+            map_style="mapbox://styles/mapbox/dark-v10",
+        )
+
+        st.pydeck_chart(deck, use_container_width=True)
 else:
     st.info(
         "This dataset does not appear to include latitude/longitude columns, "
@@ -700,7 +715,7 @@ show_cols = [
 ]
 
 st.dataframe(
-    filtered[show_cols].sort_values("date", ascending=False),
+    filtered[show_cols].sort_values("date", descending=False),
     use_container_width=True,
     height=400,
 )
