@@ -340,7 +340,6 @@ monthly_state = (
     .sort_values("month")
 )
 
-# make a categorical label so bars get a band scale (thicker bars)
 monthly_state["month_label"] = monthly_state["month"].dt.strftime("%Y-%m")
 
 metric_key = st.radio(
@@ -688,20 +687,33 @@ else:
 st.divider()
 
 
+st.subheader("Incident links (click to open)")
+
+link_cols = [c for c in ["incident_url", "source_url", "source_url_2", "source_url_3"] if c in filtered.columns]
+
+if link_cols:
+    link_df = (
+        filtered[["date", "state", "city_or_county", "n_killed", "n_injured"] + link_cols]
+        .sort_values("date", ascending=False)
+    )
+    st.dataframe(link_df, width="stretch", height=300)
+else:
+    st.info("No incident links are available in this dataset.")
+
+st.divider()
+
+
 st.subheader("Raw data for current filters")
 
-show_cols = [
-    col
-    for col in [
-        "date",
-        "state",
-        "city_or_county",
-        "n_killed",
-        "n_injured",
-        "incident_characteristics",
-    ]
-    if col in filtered.columns
+show_cols_base = [
+    "date",
+    "state",
+    "city_or_county",
+    "n_killed",
+    "n_injured",
+    "incident_characteristics",
 ]
+show_cols = [c for c in show_cols_base if c in filtered.columns] + link_cols
 
 st.dataframe(
     filtered[show_cols].sort_values("date", ascending=False),
