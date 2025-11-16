@@ -340,20 +340,30 @@ monthly = (
     .sort_values("month")
 )
 
-metric_label = st.radio(
+metric_key = st.radio(
     "What do you want to visualize",
-    options=["Number of incidents", "Number killed", "Number injured"],
+    options=["incidents", "killed", "injured"],
+    format_func=lambda x: {
+        "incidents": "Number of incidents",
+        "killed": "Number killed",
+        "injured": "Number injured",
+    }[x],
     horizontal=True,
 )
 
-metric_map = {
-    "Number of incidents": "n_incidents",
-    "Number killed": "n_killed",
-    "Number injured": "n_injured",
+metric_col_map = {
+    "incidents": "n_incidents",
+    "killed": "n_killed",
+    "injured": "n_injured",
 }
-metric_col = metric_map[metric_label]
+metric_label_map = {
+    "incidents": "Number of incidents",
+    "killed": "Number killed",
+    "injured": "Number injured",
+}
 
-y_title = metric_label
+metric_col = metric_col_map[metric_key]
+y_title = metric_label_map[metric_key]
 
 time_chart = (
     alt.Chart(monthly)
