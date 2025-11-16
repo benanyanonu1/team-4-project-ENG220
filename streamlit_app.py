@@ -25,7 +25,7 @@ def load_gun_violence_data():
     Fallback: local CSV in data/gun-violence-data_01-2013_03-2018.csv
     """
 
-    # 👉 TODO: put your real direct CSV URL here once you host it (e.g. Google Drive)
+    # 👉 OPTIONAL: put your real direct CSV URL here once you host it (e.g. Google Drive)
     DATA_URL = ""  # e.g. "https://drive.google.com/uc?export=download&id=YOUR_FILE_ID"
 
     df = None
@@ -35,7 +35,9 @@ def load_gun_violence_data():
         try:
             df = pd.read_csv(DATA_URL, parse_dates=["date"])
         except Exception as e:
-            st.warning(f"Tried to load data from URL but failed: {e}. Falling back to local file. ({e})")
+            st.warning(
+                f"Tried to load data from URL but failed: {e}. Falling back to local file."
+            )
 
     if df is None:
         # Local fallback
@@ -131,7 +133,7 @@ def build_participant_table(df: pd.DataFrame) -> pd.DataFrame:
 
     p = pd.DataFrame(rows)
 
-    # 🔁 Rename "Subject-Suspect" → "Suspect" everywhere
+    # Rename "Subject-Suspect" → "Suspect" so the UI looks cleaner
     if not p.empty and "participant_type" in p.columns:
         p["participant_type"] = p["participant_type"].replace({"Subject-Suspect": "Suspect"})
 
@@ -263,7 +265,6 @@ role_options = sorted(p_base["participant_type"].dropna().unique()) if not p_bas
 gender_options = sorted(p_base["gender"].dropna().unique()) if not p_base.empty else []
 rel_options = sorted(p_base["relationship"].dropna().unique()) if not p_base.empty else []
 
-# 🔹 label text simplified, no "(e.g. Victim, Subject-Suspect)"
 selected_roles = st.sidebar.multiselect(
     "Participant role",
     options=role_options,
@@ -663,28 +664,32 @@ if "latitude" in filtered.columns and "longitude" in filtered.columns:
             pitch=0,
         )
 
+        # Scale dot size by severity (killed + injured), but keep radius in pixels
+        map_source = map_source.copy()
+        map_source["severity"] = map_source["n_killed"] + map_source["n_injured"] + 1
+
         layer = pdk.Layer(
             "ScatterplotLayer",
             data=map_source,
             get_position='[longitude, latitude]',
-            get_radius=20000,
+            get_radius="severity * 500",   # meters, capped by pixel limits
+            radius_min_pixels=2,
+            radius_max_pixels=15,
             get_fill_color=[0, 153, 255, 160],
             pickable=True,
             auto_highlight=True,
         )
 
         tooltip = {
-            "html": "<b>{date}</b><br/>{city_or_county}, {state}<br/>"
-                    "Killed: {n_killed}, Injured: {n_injured}<br/>"
-                    "<span style='font-size: 10px'>{incident_characteristics}</span>",
-            "style": {"backgroundColor": "black", "color": "white"},
+            "text": "{date} | {city_or_county}, {state}\n"
+                    "Killed: {n_killed}, Injured: {n_injured}",
         }
 
         deck = pdk.Deck(
             layers=[layer],
             initial_view_state=view_state,
             tooltip=tooltip,
-            map_style="mapbox://styles/mapbox/dark-v10",
+            # default basemap (zoomable, pannable)
         )
 
         st.pydeck_chart(deck, use_container_width=True)
@@ -715,7 +720,7 @@ show_cols = [
 ]
 
 st.dataframe(
-    filtered[show_cols].sort_values("date", descending=False),
+    filtered[show_cols].sort_values("date", ascending=False),
     use_container_width=True,
     height=400,
 )
