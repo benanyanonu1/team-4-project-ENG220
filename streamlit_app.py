@@ -255,6 +255,12 @@ def main():
         gender_options = sorted(p_base["gender"].dropna().unique()) if not p_base.empty else []
         rel_options = sorted(p_base["relationship"].dropna().unique()) if not p_base.empty else []
 
+        # start from all participants for this incident set
+        if p_base is not None and not p_base.empty:
+            pf = p_base.copy()
+        else:
+            pf = p_base
+
         selected_roles = sidebar_multiselect_with_all("Participant role", role_options, "roles")
         selected_genders = sidebar_multiselect_with_all("Participant gender", gender_options, "gender")
         selected_relationships = sidebar_multiselect_with_all(
@@ -276,8 +282,8 @@ def main():
 
         incident_ids = set(base_incident_ids)
 
-        if p_base is not None and not p_base.empty:
-            pf = p_base.copy()
+        # apply participant filters to participants table and incident set
+        if pf is not None and not pf.empty:
             if selected_roles and len(selected_roles) != len(role_options):
                 pf = pf[pf["participant_type"].isin(selected_roles)]
             if selected_genders and len(selected_genders) != len(gender_options):
@@ -288,6 +294,7 @@ def main():
             if len(pf) < len(p_base):
                 incident_ids &= set(pf["incident_id"].unique())
 
+        # apply gun filters
         if g_base is not None and not g_base.empty:
             gf = g_base.copy()
             if selected_gun_types and len(selected_gun_types) != len(gun_type_options):
@@ -304,7 +311,12 @@ def main():
             st.warning("No incidents match all selected filters.")
             st.stop()
 
-        p_filtered = p_base[p_base["incident_id"].isin(incident_ids)]
+        # important: participant demographics now respect participant filters, not just incident filters
+        if pf is not None:
+            p_filtered = pf[pf["incident_id"].isin(incident_ids)]
+        else:
+            p_filtered = pd.DataFrame(columns=p_base.columns if p_base is not None else [])
+
         guns_filtered = g_base[g_base["incident_id"].isin(incident_ids)]
 
         total_incidents = len(filtered)
@@ -404,7 +416,7 @@ def main():
         left, right = st.columns(2)
 
         with left:
-            st.markdown("**Incidents by state**")
+            st.markdown("Incidents by state")
             incidents_bar = (
                 alt.Chart(state_summary)
                 .mark_bar()
@@ -418,7 +430,7 @@ def main():
             st.altair_chart(incidents_bar, width="stretch")
 
         with right:
-            st.markdown("**People killed by state**")
+            st.markdown("People killed by state")
             killed_bar = (
                 alt.Chart(state_summary)
                 .mark_bar()
@@ -444,7 +456,7 @@ def main():
             col_age, col_gender = st.columns(2)
 
             with col_age:
-                st.markdown("**Age distribution for victims and suspects**")
+                st.markdown("Age distribution for victims and suspects")
                 if p_age.empty:
                     st.info("No usable age data for the current filters.")
                 else:
@@ -465,7 +477,7 @@ def main():
                     st.altair_chart(age_chart, width="stretch")
 
             with col_gender:
-                st.markdown("**Gender by participant role**")
+                st.markdown("Gender by participant role")
                 g = p_filtered.dropna(subset=["gender", "participant_type"])
                 if g.empty:
                     st.info("No usable gender data for the current filters.")
@@ -492,7 +504,7 @@ def main():
 
             rel = p_filtered.dropna(subset=["relationship"])
             if not rel.empty:
-                st.markdown("**Relationship examples such as family or partner**")
+                st.markdown("Relationship examples such as family or partner")
                 rel_counts = (
                     rel.groupby("relationship", as_index=False)
                     .size()
@@ -541,7 +553,7 @@ def main():
             col_gun_type, col_stolen = st.columns(2)
 
             with col_gun_type:
-                st.markdown("**Top gun types**")
+                st.markdown("Top gun types")
                 gun_type_chart = (
                     alt.Chart(gun_counts)
                     .mark_bar()
@@ -555,7 +567,7 @@ def main():
                 st.altair_chart(gun_type_chart, width="stretch")
 
             with col_stolen:
-                st.markdown("**Guns stolen or not stolen**")
+                st.markdown("Guns stolen or not stolen")
                 stolen_chart = (
                     alt.Chart(stolen_counts)
                     .mark_bar()
@@ -568,7 +580,7 @@ def main():
                 )
                 st.altair_chart(stolen_chart, width="stretch")
 
-            st.markdown("**Outcomes by gun type mean and median deaths per incident**")
+            st.markdown("Outcomes by gun type mean and median deaths per incident")
 
             inc_level = filtered[["incident_id", "n_killed", "n_injured"]].drop_duplicates()
             inc_gun = guns_clean[["incident_id", "gun_type"]].dropna().drop_duplicates()
