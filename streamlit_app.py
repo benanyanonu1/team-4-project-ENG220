@@ -544,11 +544,13 @@ def main():
             )
 
             stolen_counts = (
-                guns_clean.groupby("gun_stolen", as_index=False)
+            guns_clean[guns_clean["gun_stolen"].isin(["Stolen", "Not-stolen", "Not Stolen"])]
+                .groupby("gun_stolen", as_index=False)
                 .size()
                 .rename(columns={"size": "count"})
                 .sort_values("count", ascending=False)
             )
+
 
             col_gun_type, col_stolen = st.columns(2)
 
